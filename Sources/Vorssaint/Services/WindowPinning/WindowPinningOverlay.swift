@@ -108,6 +108,7 @@ final class WindowPinningOverlayManager {
         }
         overlays[entry.windowID] = overlay
         updateMouseMonitors()
+        updateVisibility()
         overlay.beginCapture { [weak self] windowID in
             self?.removeOverlay(windowID: windowID, stopStream: false)
         }
@@ -347,7 +348,11 @@ private final class WindowPinningOverlay: NSObject {
         // No shadow of our own: the original window keeps its shadow, and a
         // clone dragging a second shadow around would double it up.
         panel.hasShadow = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        // Not on all Spaces: the clone belongs to the original's Space. The
+        // manager orders it in only while the original is on screen, and
+        // ordering in places it on the active Space, which is then the
+        // original's.
+        panel.collectionBehavior = [.stationary, .ignoresCycle]
         panel.animationBehavior = .none
         // NSPanel hides itself when the app deactivates by default; a pin
         // has to survive the user clicking back into the app they pinned.
@@ -371,7 +376,8 @@ private final class WindowPinningOverlay: NSObject {
         panel.contentView = host
         self.displayLayer = displayLayer
         Self.log.debug("panel up for window \(self.entry.windowID, privacy: .public): frame=\(String(describing: frame), privacy: .public) screens=\(String(describing: NSScreen.screens.map { $0.frame }), privacy: .public)")
-        panel.orderFrontRegardless()
+        // Ordered in by the manager's visibility pass, not here: a pin
+        // restored at launch may belong to a Space that is not active.
         return panel
     }
 
@@ -398,8 +404,9 @@ private final class WindowPinningOverlay: NSObject {
 
     private func fetchShareableWindow(attempt: Int) async -> SCWindow? {
         // Off-screen windows stay in the listing (`onScreenWindowsOnly:
-        // false`): a pinned window the user has moved to another Space is
-        // still cloned where its panel stands. The completion-handler form
+        // false`): a pin restored at launch whose window sits on another
+        // Space still gets its stream, ready for when that Space is active
+        // again. The completion-handler form
         // of this call is gone from the macOS 26 SDK (only the async import
         // remains), so the engine's `try await` shape carries the lookup;
         // the retry around it is this feature's, not the engine's.

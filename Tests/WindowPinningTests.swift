@@ -203,8 +203,8 @@ enum WindowPinningTests {
                      "the pinned app's child UI inside the original does not cover it")
         suite.expect(!covered([original, window(pid: Int(other), frame: pinned, number: 203)]),
                      "a window behind the original does not cover it")
-        suite.expect(covered([clone]),
-                     "an original missing from the on-screen list keeps its clone showing")
+        suite.expect(!covered([clone]),
+                     "an original missing from the on-screen list (another Space) hides its clone")
     }
 
     private static func backupAssertions(_ suite: TestSuite) {

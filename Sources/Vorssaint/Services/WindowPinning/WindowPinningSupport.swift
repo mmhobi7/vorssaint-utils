@@ -136,16 +136,18 @@ enum WindowPinningResolver {
     /// original is already on top, and showing it directly keeps drags and
     /// resizes native. The pinned app's child UI inside the original (a
     /// popover, sheet or rename field) does not count, and neither do our own
-    /// panels. An original missing from the on-screen list (another Space)
-    /// counts as covered, so its clone keeps standing in for it. `windows` is
-    /// the on-screen list front to back.
+    /// panels. An original missing from the on-screen list (on another Space,
+    /// minimized or hidden) is not covered either: the clone stays on the
+    /// original's Space, because elsewhere it could only show a window that
+    /// cannot be clicked and may have stopped drawing. `windows` is the
+    /// on-screen list front to back.
     static func isCovered(pinnedWindowID: CGWindowID,
                           pinnedOwnerPID: pid_t,
                           ownPID: pid_t,
                           windows: [[String: Any]]) -> Bool {
         guard let pinnedIndex = windows.firstIndex(where: { windowID(of: $0) == pinnedWindowID }),
               let pinnedBounds = WindowServerSupport.bounds(from: windows[pinnedIndex])
-        else { return true }
+        else { return false }
         return windows[..<pinnedIndex].contains { window in
             let owner = (window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value
             guard owner != ownPID,
