@@ -106,13 +106,16 @@ enum WindowPinningResolver {
     /// take the click is the original itself, or a child of the same app
     /// sitting inside it (a popover, sheet or rename field). Any other window
     /// in front means the original is covered there, so the clone has to
-    /// catch the click and bring the original forward. `windows` is the
-    /// on-screen list front to back; our own panels are skipped.
+    /// catch the click and bring the original forward. So does an original
+    /// missing from the list: a clone showing on another Space takes the
+    /// click and leads back to it. `windows` is the on-screen list front to
+    /// back; our own panels are skipped.
     static func clickFallsThrough(at point: CGPoint,
                                   pinnedWindowID: CGWindowID,
                                   pinnedOwnerPID: pid_t,
                                   ownPID: pid_t,
                                   windows: [[String: Any]]) -> Bool {
+        guard windows.contains(where: { windowID(of: $0) == pinnedWindowID }) else { return false }
         let receiver = windows.first { window in
             guard (window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value != ownPID,
                   (window[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
@@ -137,17 +140,19 @@ enum WindowPinningResolver {
     /// resizes native. The pinned app's child UI inside the original (a
     /// popover, sheet or rename field) does not count, and neither do our own
     /// panels. An original missing from the on-screen list (on another Space,
-    /// minimized or hidden) is not covered either: the clone stays on the
-    /// original's Space, because elsewhere it could only show a window that
-    /// cannot be clicked and may have stopped drawing. `windows` is the
+    /// minimized or hidden) answers `offScreenIsCovered`: by default the
+    /// clone stays on the original's Space, because elsewhere it can only
+    /// show a window that may have stopped drawing; with Show on All Spaces
+    /// it stands in for an original on another Space. `windows` is the
     /// on-screen list front to back.
     static func isCovered(pinnedWindowID: CGWindowID,
                           pinnedOwnerPID: pid_t,
                           ownPID: pid_t,
-                          windows: [[String: Any]]) -> Bool {
+                          windows: [[String: Any]],
+                          offScreenIsCovered: Bool) -> Bool {
         guard let pinnedIndex = windows.firstIndex(where: { windowID(of: $0) == pinnedWindowID }),
               let pinnedBounds = WindowServerSupport.bounds(from: windows[pinnedIndex])
-        else { return false }
+        else { return offScreenIsCovered }
         return windows[..<pinnedIndex].contains { window in
             let owner = (window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value
             guard owner != ownPID,

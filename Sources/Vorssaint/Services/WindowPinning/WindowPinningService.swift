@@ -46,6 +46,10 @@ final class WindowPinningService: ObservableObject {
     /// window the user was just working in", so the toggle falls back to this
     /// when the current focus is ourselves.
     private var recentOtherFrontmostPID: pid_t?
+    /// A clone clicked on another Space whose original Accessibility could
+    /// not reach yet: it only lists the windows of the active Space. The
+    /// owner's activation switches Spaces, and the raise is retried there.
+    private var pendingRaise: PinnedWindowEntry?
 
     private init() {
         SessionActivity.shared.onChange { [weak self] _ in
@@ -99,6 +103,9 @@ final class WindowPinningService: ObservableObject {
         WindowPinningOverlayManager.shared.onCloneClicked = { [weak self] entry in
             self?.raiseOriginal(of: entry)
         }
+        WindowPinningOverlayManager.shared.isOriginalParked = { [weak self] entry in
+            self?.isParked(entry) ?? false
+        }
         reassertPersistedPins()
         let center = NSWorkspace.shared.notificationCenter
         workspaceObservers.append((center, center.addObserver(
@@ -108,6 +115,7 @@ final class WindowPinningService: ObservableObject {
         workspaceObservers.append((center, center.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.reverifyPinnedWindows()
+                self?.raisePendingOriginal()
             }))
         workspaceObservers.append((center, center.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
@@ -219,19 +227,49 @@ final class WindowPinningService: ObservableObject {
     /// owner activates and the matching Accessibility window is raised. The
     /// AX window is matched by frame, the same key the toggle resolves with.
     private func raiseOriginal(of entry: PinnedWindowEntry) {
+        pendingRaise = nil
         NSRunningApplication(processIdentifier: entry.ownerPID)?.activate()
-        guard let frame = WindowServerSupport.frame(ofWindowID: entry.windowID) else { return }
-        let application = AXUIElementCreateApplication(entry.ownerPID)
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &value) == .success,
-              let windows = value as? [AXUIElement],
-              let window = windows.first(where: { Self.frame(of: $0) == frame })
-        else {
-            Self.log.info("raise for window \(entry.windowID, privacy: .public): no matching AX window")
+        guard let window = axWindow(of: entry) else {
+            // Most likely on another Space: activating the owner takes the
+            // user there, and the raise follows once that Space is active.
+            Self.log.info("raise for window \(entry.windowID, privacy: .public): no matching AX window yet")
+            pendingRaise = entry
             return
         }
         AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
         AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+    }
+
+    private func raisePendingOriginal() {
+        guard let entry = pendingRaise else { return }
+        pendingRaise = nil
+        guard store.contains(windowID: entry.windowID), let window = axWindow(of: entry) else { return }
+        AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+    }
+
+    /// Whether the original is minimized or its app hidden: off screen, but
+    /// not on another Space, so a clone shown on every Space must not stand
+    /// in for it. A window Accessibility cannot find is on another Space.
+    private func isParked(_ entry: PinnedWindowEntry) -> Bool {
+        if NSRunningApplication(processIdentifier: entry.ownerPID)?.isHidden == true { return true }
+        guard let window = axWindow(of: entry) else { return false }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &value) == .success
+        else { return false }
+        return (value as? Bool) == true
+    }
+
+    /// The original's Accessibility window, matched by frame, the same key
+    /// the toggle resolves with. Nil for a window on another Space, which
+    /// Accessibility does not list.
+    private func axWindow(of entry: PinnedWindowEntry) -> AXUIElement? {
+        guard let frame = WindowServerSupport.frame(ofWindowID: entry.windowID) else { return nil }
+        let application = AXUIElementCreateApplication(entry.ownerPID)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement] else { return nil }
+        return windows.first { Self.frame(of: $0) == frame }
     }
 
     private static func frame(of element: AXUIElement) -> CGRect? {

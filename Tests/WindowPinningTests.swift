@@ -176,6 +176,8 @@ enum WindowPinningTests {
         suite.expect(fallsThrough([clone, window(pid: Int(other), frame: CGRect(x: 0, y: 0, width: 10, height: 10),
                                                  number: 202), original]),
                      "a window elsewhere on screen does not change the routing")
+        suite.expect(!fallsThrough([clone]),
+                     "a clone whose original is on another Space catches the click to lead back to it")
     }
 
     private static func coverageAssertions(_ suite: TestSuite) {
@@ -183,9 +185,10 @@ enum WindowPinningTests {
         let target: pid_t = 60
         let other: pid_t = 70
         let pinned = CGRect(x: 0, y: 0, width: 800, height: 600)
-        func covered(_ windows: [[String: Any]]) -> Bool {
+        func covered(_ windows: [[String: Any]], offScreenIsCovered: Bool = false) -> Bool {
             WindowPinningResolver.isCovered(pinnedWindowID: 101, pinnedOwnerPID: target,
-                                            ownPID: own, windows: windows)
+                                            ownPID: own, windows: windows,
+                                            offScreenIsCovered: offScreenIsCovered)
         }
         let clone = window(pid: Int(own), frame: pinned, number: 900)
         let original = window(pid: Int(target), frame: pinned, number: 101)
@@ -205,13 +208,18 @@ enum WindowPinningTests {
                      "a window behind the original does not cover it")
         suite.expect(!covered([clone]),
                      "an original missing from the on-screen list (another Space) hides its clone")
+        suite.expect(covered([clone], offScreenIsCovered: true),
+                     "with Show on All Spaces, an original on another Space keeps its clone showing")
+        suite.expect(!covered([clone, original], offScreenIsCovered: true),
+                     "Show on All Spaces leaves an uncovered on-screen original showing directly")
     }
 
     private static func backupAssertions(_ suite: TestSuite) {
         let keys = SettingsBackupSupport.exportKeys()
         suite.expect(keys.contains(DefaultsKey.windowPinningEnabled)
-                && keys.contains(DefaultsKey.windowPinningShortcut),
-                     "the backup carries the pinning switch and its shortcut")
+                && keys.contains(DefaultsKey.windowPinningShortcut)
+                && keys.contains(DefaultsKey.windowPinningShowOnAllSpaces),
+                     "the backup carries the pinning switch, its shortcut and Show on All Spaces")
         suite.expect(!keys.contains(DefaultsKey.windowPinnedWindows),
                      "the backup leaves out the pins themselves: window ids only mean something on this Mac")
     }

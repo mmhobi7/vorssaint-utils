@@ -137,6 +137,7 @@ enum DefaultsKey {
     static let spacesOrderRestartPending = "spacesOrderRestartPending" // local recovery; never backed up: "<Dock pid> <fixed|rearranging> <absent|on|off>…", the Dock process that owes the restart reading a written mru-spaces, what it runs and the values written under it
     static let windowPinningEnabled = "windowPinningEnabled"
     static let windowPinningShortcut = "windowPinningShortcut"  // GlobalShortcut storage value
+    static let windowPinningShowOnAllSpaces = "windowPinningShowOnAllSpaces"
     static let windowPinnedWindows = "windowPinnedWindows"      // persisted pinned window entries
     static let panelShowWindowPinning = "panelShowWindowPinning"
     static let middleClickEnabled = "middleClickEnabled"  // three-finger PHYSICAL click on the trackpad acts as a middle click
@@ -1207,6 +1208,7 @@ enum Defaults {
         DefaultsKey.keepAwakeShortcut: "control+option+command:40",
         DefaultsKey.windowPinningEnabled: false,
         DefaultsKey.windowPinningShortcut: GlobalShortcut.windowPinningDefault.storageValue,
+        DefaultsKey.windowPinningShowOnAllSpaces: false,
         DefaultsKey.keepAwakeIconTint: KeepAwakeIconTint.orange.rawValue,
         DefaultsKey.keepAwakeActiveIcon: KeepAwakeActiveIcon.vorssaint.rawValue,
         DefaultsKey.showCountdown: false,

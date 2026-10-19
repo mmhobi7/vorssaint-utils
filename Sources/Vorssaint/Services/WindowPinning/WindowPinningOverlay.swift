@@ -54,6 +54,15 @@ final class WindowPinningOverlayManager {
     /// Called when a clone catches a click because another window covers the
     /// original there; the service brings the original forward.
     var onCloneClicked: ((PinnedWindowEntry) -> Void)?
+    /// Whether an off-screen original is minimized or hidden rather than on
+    /// another Space; the service answers it through Accessibility.
+    var isOriginalParked: ((PinnedWindowEntry) -> Bool)?
+
+    /// Show on All Spaces: clones follow the user to every Space instead of
+    /// staying on their original's.
+    private var showsOnAllSpaces: Bool {
+        UserDefaults.standard.bool(forKey: DefaultsKey.windowPinningShowOnAllSpaces)
+    }
 
     private init() {}
 
@@ -92,6 +101,7 @@ final class WindowPinningOverlayManager {
 
         let overlay = WindowPinningOverlay(
             entry: entry,
+            onAllSpaces: showsOnAllSpaces,
             frame: Self.occlusionBeatingFrame(Self.appkitFrame(fromWindowServerFrame: windowServerFrame)))
         overlay.onStreamEnded = { [weak self] windowID in
             // The stream ended without being asked (owner quit, window
@@ -133,6 +143,14 @@ final class WindowPinningOverlayManager {
             overlays[windowID]?.move(to: Self.occlusionBeatingFrame(Self.appkitFrame(fromWindowServerFrame: windowServerFrame)))
         }
         // The pointer may sit still while windows reorder under it.
+        updateVisibility()
+        routeClicks()
+    }
+
+    /// Applies a changed Show on All Spaces to the clones already up.
+    func syncSpacesPreference() {
+        let onAllSpaces = showsOnAllSpaces
+        overlays.values.forEach { $0.setOnAllSpaces(onAllSpaces) }
         updateVisibility()
         routeClicks()
     }
@@ -201,12 +219,20 @@ final class WindowPinningOverlayManager {
         let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
                                                  kCGNullWindowID) as? [[String: Any]] ?? []
         let ownPID = ProcessInfo.processInfo.processIdentifier
+        let onAllSpaces = showsOnAllSpaces
+        let onScreenIDs = Set(windows.compactMap { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value })
         for overlay in overlays.values {
+            // Accessibility is only asked about an original that is off
+            // screen while clones follow every Space.
+            let offScreenIsCovered = onAllSpaces
+                && !onScreenIDs.contains(overlay.entry.windowID)
+                && isOriginalParked?(overlay.entry) != true
             overlay.setShown(WindowPinningResolver.isCovered(
                 pinnedWindowID: overlay.entry.windowID,
                 pinnedOwnerPID: overlay.entry.ownerPID,
                 ownPID: ownPID,
-                windows: windows))
+                windows: windows,
+                offScreenIsCovered: offScreenIsCovered))
         }
     }
 
@@ -321,10 +347,11 @@ private final class WindowPinningOverlay: NSObject {
     /// catch up with the window server before the single retry.
     private static let fetchRetryDelayNanoseconds: UInt64 = 500_000_000
 
-    init(entry: PinnedWindowEntry, frame: CGRect) {
+    init(entry: PinnedWindowEntry, onAllSpaces: Bool, frame: CGRect) {
         self.entry = entry
         super.init()
         panel = makePanel(frame: frame)
+        setOnAllSpaces(onAllSpaces)
     }
 
     // MARK: - Panel
@@ -348,10 +375,10 @@ private final class WindowPinningOverlay: NSObject {
         // No shadow of our own: the original window keeps its shadow, and a
         // clone dragging a second shadow around would double it up.
         panel.hasShadow = false
-        // Not on all Spaces: the clone belongs to the original's Space. The
-        // manager orders it in only while the original is on screen, and
-        // ordering in places it on the active Space, which is then the
-        // original's.
+        // Not on all Spaces unless asked (setOnAllSpaces): the clone belongs
+        // to the original's Space. The manager orders it in only while the
+        // original is on screen, and ordering in places it on the active
+        // Space, which is then the original's.
         panel.collectionBehavior = [.stationary, .ignoresCycle]
         panel.animationBehavior = .none
         // NSPanel hides itself when the app deactivates by default; a pin
@@ -537,6 +564,15 @@ private final class WindowPinningOverlay: NSObject {
             }
         } else {
             WindowPinningOverlayManager.streamQueue.sync {}
+        }
+    }
+
+    func setOnAllSpaces(_ onAllSpaces: Bool) {
+        guard let panel else { return }
+        if onAllSpaces {
+            panel.collectionBehavior.insert(.canJoinAllSpaces)
+        } else {
+            panel.collectionBehavior.remove(.canJoinAllSpaces)
         }
     }
 

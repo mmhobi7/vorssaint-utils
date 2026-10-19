@@ -10,6 +10,7 @@ struct WindowPinningSettings: View {
     @AppStorage(DefaultsKey.windowPinningEnabled) private var enabled = false
     @AppStorage(DefaultsKey.windowPinningShortcut) private var shortcutRaw =
         GlobalShortcut.windowPinningDefault.storageValue
+    @AppStorage(DefaultsKey.windowPinningShowOnAllSpaces) private var showOnAllSpaces = false
     @State private var shortcutError: String?
     @State private var recordingShortcut = false
     @State private var pendingShortcutTakeOver: GlobalShortcut?
@@ -40,6 +41,13 @@ struct WindowPinningSettings: View {
                             .foregroundStyle(.secondary)
                     } else if enabled {
                         shortcutRow
+                        Toggle(text.allSpacesToggle, isOn: $showOnAllSpaces)
+                            .onChange(of: showOnAllSpaces) { _, _ in
+                                WindowPinningOverlayManager.shared.syncSpacesPreference()
+                            }
+                        Text(text.allSpacesCaption)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         Button(text.pinNowButton) {
                             WindowPinningService.shared.toggleFocusedWindow(source: .menu)
                         }

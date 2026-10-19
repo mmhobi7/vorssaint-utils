@@ -292,6 +292,7 @@ enum SettingsDirectory {
                                       featureKeywords: [
                                         (.windowPinning,
                                          [FeatureStrings.windowPinning(language).enableToggle,
+                                          FeatureStrings.windowPinning(language).allSpacesToggle,
                                           FeatureStrings.windowPinning(language).pinNowButton,
                                           FeatureStrings.windowPinning(language).unpinAllButton]),
                                       ]),
